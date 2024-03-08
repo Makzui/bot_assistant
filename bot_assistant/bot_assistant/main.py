@@ -1,5 +1,6 @@
 import sys
 import time
+from abc import abstractmethod, ABC
 from bot_assistant.contacts import AddressBook, Record, Name, Phone, Birthday, Email
 from bot_assistant.notebook import Note, NoteBook
 from bot_assistant.file_sorter import FileSorter
@@ -7,6 +8,48 @@ from datetime import datetime
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit import PromptSession
 
+
+class UserInterface(ABC): # абстрактний клас
+    @abstractmethod 
+    def show_to_user(self): 
+        pass
+
+class ContactsUserInterface(UserInterface): # клас для відображення контактів
+    def __init__(self, contact): 
+        self.contact = contact 
+
+    def show_to_user(self): 
+        print("*-"*25)
+        print("Contact Name:", self.contact.name)
+        print("Phones:", ', '.join(self.contact.phones))
+        if self.contact.email.value:
+            print("Email:", self.contact.email)
+        if self.contact.birthday.value:
+            print("Birthday:", self.contact.birthday)
+
+
+class NoteUserInterface(UserInterface): # клас для відображення нотатків
+    def __init__(self, note): 
+        self.note = note
+
+    def show_to_user(self): 
+        print("*-"*25)
+        print("Note Title:", self.note.title)
+        print("Text:", self.note.text)
+        print("Tags:", ', '.join(self.note.tags))
+        print("Creation Date:", self.note.creation_date)
+
+
+class HelpUserInterface(UserInterface): # клас для help
+    def __init__(self, help_dict): 
+        self.help_dict = help_dict
+
+    def show_to_user(self): 
+        print("_"*50)
+        for key, value in self.help_dict.items():
+            print(f"Command: {key} \n Explanation: {value}")
+            print("_"*50)
+        
 
 OTTO = r"""
 I am your personal bot-assistant named
@@ -115,15 +158,13 @@ class ContactBot:
         if not self.address_book.data:
             return "No contacts available"
         else:
-            result = ""
+            result = []
             for record in self.address_book.data.values():
-                contact_info = f"Contact name: {record.name.value}, Phones: {', '.join(record.phones)}"
-                if record.birthday.value:
-                    contact_info += f", Birthday: {record.birthday}"
-                if record.email.value:
-                    contact_info += f", Email: {record.email}"
-                result += contact_info + "\n"
-            return result
+                contact_interface = ContactsUserInterface(record)
+                result.append(contact_interface.show_to_user())
+            for each in result:
+                return each
+            
 
     # пошук контактів з днем народження в межах 14 днів
     def search_by_bd(self):
@@ -155,7 +196,7 @@ class ContactBot:
         else:
             result = ""
             for contact, days_left in upcoming_birthday_contacts:
-                result += f"Contact: {contact.name.value}, Days until birthday: {days_left} ({contact.birthday})\n"  # Змінено
+                result += f"Contact: {contact.name.value}, Days until birthday: {days_left} ({contact.birthday})\n"  
             return result
 
     # додавання дня народження контакту
@@ -208,7 +249,12 @@ class ContactBot:
         if not self.note_book.data:
             return "No notes available"
         else:
-            return "\n".join(str(note) for note in self.note_book.data)
+            result = []
+            for note in self.note_book.data:
+                note_interface = NoteUserInterface(note)
+                result.append(note_interface.show_to_user())
+            for element in result:
+                return element
 
     # надання користувачу довідки щодо доступних команд для роботи з нотатками
     def search_note(self, search_query):
@@ -219,7 +265,8 @@ class ContactBot:
             if any(term in note.title.lower() or term in note.text.lower() or term in ' '.join(note.tags).lower() for term in search_terms)
         ]
         if found_notes:
-            return "\n".join(str(note) for note in found_notes)
+            for note in found_notes: 
+                return note 
         else:
             return "No notes found matching '{search_query}'"
 
@@ -247,11 +294,8 @@ class ContactBot:
             "sort_files": "<Path to the folder you want to sort>: Files sorted successfully.",
         }
 
-        max_command_length = max(len(command) for command in commands_help.keys())
-        formatted_help = [f"{command.ljust(max_command_length)} : {description}" for command, description in commands_help.items()]
-        # Выводим отформатированный список команд
-        for line in formatted_help:
-            return "\n".join([f"{cmd}: {desc}" for cmd, desc in commands_help.items()])
+        help_interface = HelpUserInterface(commands_help) # створюю об"єкт класу HelpUserInterface
+        return help_interface.show_to_user() # викликаємо функцію show_to_user класу HelpUserInterface
 
     def help_note(self):
         commands = {
@@ -262,7 +306,8 @@ class ContactBot:
             "show_note": "Show all notes.",
             "help_note": "Show this help message.",
         }
-        return "\n".join([f"{cmd}: {desc}" for cmd, desc in commands.items()])
+        help_interface = HelpUserInterface(commands) # створюю об"єкт класу HelpUserInterface
+        return help_interface.show_to_user() # викликаємо функцію show_to_user класу HelpUserInterface
 
     # Видалення контакту
     def delete_contact(self, name):
@@ -281,7 +326,8 @@ class ContactBot:
             or any(name.lower() in phone.lower() for phone in record.phones)
         ]
         if found_records:
-            return "\n".join(str(record) for record in found_records)
+            for record in found_records:
+                return record 
         else:
             return f"No contacts found matching '{name}'"
 
@@ -315,23 +361,25 @@ class ContactBot:
                 for record in self.address_book.data.values():
                     contact_info = f"{', '.join(record.phones)}"
                     if contact_info[-10:] == data[-10:] or contact_info[-22:-12] == data[-10:]:
-                        return "The phone number you entered already exists"  # Введений вами номер телефону вже існує
+                        return "The phone number you entered already exists"  
                 return self.add_contact(data)
             elif user_input.startswith("add_phone"):  # додає телефон до списку телефонів контакту. Як працюєЖ пишемо add_phone name
                 data = user_input_original[len("add_phone") + 1 :]
                 for record in self.address_book.data.values():
                     contact_info = f"{', '.join(record.phones)}"
                     if contact_info[-10:] == data[-10:] or contact_info[-22:-12] == data[-10:]:
-                        return "The phone number you entered already exists"  # Введений вами номер телефону вже існує
+                        return "The phone number you entered already exists"  
                 return self.add_phone(data)
-            elif user_input.startswith("add_note"):  # + Додає нотатку до нотатника.
+            elif user_input.startswith("add_note"):  
                 if len(user_input.split()) > 1:
                     return "Invalid command format. Usage: add_note"
                 else:
                     return self.add_note()
             elif user_input.startswith("search_note"):
                 search_query = user_input_original[len("search_note") + 1:].strip()
-                return self.search_note(search_query)
+                note = self.search_note(search_query) # позначаємо результат пошуку як змінну note
+                note_interface = NoteUserInterface(note) # створюємо об"єкт класу NoteUserInterface з аргументом note
+                return note_interface.show_to_user()
             elif user_input.startswith("edit_note"):  # + Редагує існуючу нотатку. edit_note "назва рецепту" "новий зміст рецепту"
                 command, *args = (
                     user_input_original.split()
@@ -382,7 +430,9 @@ class ContactBot:
                 return self.delete_contact(name)
             elif user_input.startswith("search_contacts"):
                 name = user_input[len("search_contacts") + 1 :]
-                return self.search_contacts(name)
+                contact = self.search_contacts(name) # позначаємо результат пошуку як змінну contact
+                contact_interface = ContactsUserInterface(contact) # створюємо об"єкт класу ContactsUserInterface
+                return contact_interface.show_to_user() # повертаємо результат виклику функції show_to_user
             elif user_input == "search_by_bd":
                 return self.search_by_bd()
             else:
